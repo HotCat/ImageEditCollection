@@ -1,0 +1,4 @@
+interface:
+  display_name: "Segment Overlapping People"
+  short_description: "Separate touching people into identity masks"
+  default_prompt: "Use $segment-overlapping-people to separate the two overlapping people into distinct visible-surface masks."
