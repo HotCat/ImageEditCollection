@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sync Karaoke Lyrics"
+  short_description: "Synchronize and burn progressive karaoke lyrics"
+  default_prompt: "Use $sync-karaoke-lyrics to synchronize these lyrics to my video and create a burned-in karaoke MP4."
