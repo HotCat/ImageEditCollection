@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run RunningHub Workflows"
+  short_description: "Schedule and download RunningHub API workflows"
+  default_prompt: "Use $run-runninghub-workflows to upload my inputs, execute a RunningHub ComfyUI workflow, and download its validated outputs."
