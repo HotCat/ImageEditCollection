@@ -1,0 +1,4 @@
+interface:
+  display_name: "Retopologize and Rig Characters"
+  short_description: "Rebuild dense AI characters for clean posing"
+  default_prompt: "Use $retopologize-rig-characters to retopologize, rig, pose, and render multi-angle QA for this character GLB."
