@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reframe Video Camera on RunningHub"
+  short_description: "Move a source video camera with CrossView and LTX"
+  default_prompt: "Use $reframe-video-camera-runninghub to move the virtual camera around this source video and deliver the generated result."

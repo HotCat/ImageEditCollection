@@ -1,0 +1,6 @@
+numpy==2.5.2
+opencv-python-headless==5.0.0.93
+Pillow==12.3.0
+torch==2.13.0
+transformers==5.15.1
+truststore==0.10.4

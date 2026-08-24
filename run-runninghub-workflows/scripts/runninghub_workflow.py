@@ -18,6 +18,17 @@ import urllib.request
 import uuid
 
 
+# Prefer the host OS trust store when available. Some Conda Python builds carry
+# a relocated OpenSSL path that cannot validate certificates Safari and curl
+# already trust, which otherwise breaks every RunningHub request before auth.
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
+
+
 TERMINAL_FAILURES = {"FAILED", "ERROR", "CANCELED", "CANCELLED"}
 
 

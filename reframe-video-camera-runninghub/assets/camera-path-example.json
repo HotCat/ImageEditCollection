@@ -1,0 +1,25 @@
+{
+  "interpolation": "smooth",
+  "hfov": 50.0,
+  "depth_ratio": 6.0,
+  "keyframes": [
+    {
+      "frame": 1,
+      "azimuth": -45.0,
+      "elevation": 0.0,
+      "distance": 1.05
+    },
+    {
+      "frame": 121,
+      "azimuth": 0.0,
+      "elevation": 10.0,
+      "distance": 1.05
+    },
+    {
+      "frame": 241,
+      "azimuth": 45.0,
+      "elevation": 20.0,
+      "distance": 1.05
+    }
+  ]
+}
