@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build MakeHuman Godot Character"
+  short_description: "Turn one A-pose photo into a rigged GLB"
+  default_prompt: "Use $build-makehuman-godot-character to turn this A-pose character image into an MPFB-compatible editable preset and a validated Godot 4 humanoid GLB."
