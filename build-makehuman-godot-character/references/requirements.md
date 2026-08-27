@@ -12,6 +12,9 @@
 - Blender 4.2 or newer. MPFB 2.0.x requires Blender 4.2+; Blender 4.0 is not a safe default for the current extension.
 - MPFB enabled in the Blender process and its MakeHuman target data available.
 - Godot 4.x for final import and retarget verification.
+- A compatible Humanizer project with generated target, body, eye, eyebrow,
+  eyelash, hair, rig, material, and animation resources. The final exporter runs
+  inside this project; a standalone Godot binary without those assets is insufficient.
 - Python 3 with Pillow and NumPy for contact sheets and mask measurements.
 - macOS with Swift, Vision, AppKit, and CoreImage for `analyze_turnaround.swift`. On another OS, substitute a pose, face-landmark, and person-segmentation detector that writes equivalent evidence.
 - HeyRoute access only when generating identity-preserving views. Store the token in `HEYROUTE_API_KEY`; never put it in JSON, shell history arguments, source, logs, or Git.
@@ -41,5 +44,7 @@ When `HEYROUTE_API_KEY` is unavailable, do not synthesize missing views through 
 
 - The process fits a parametric human to image evidence; it is not metric single-view 3D reconstruction.
 - The generated turnaround is identity-conditioned synthesis, not calibrated photogrammetry.
-- The output preserves MakeHuman/MPFB topology and an editable human preset. It does not automatically create Humanizer-native recipes, MakeClothes `.mhclo` garments, equipment sockets, facial blendshapes, or production hair cards.
+- The MPFB stage preserves editable MakeHuman topology and a human preset. The final stage creates a Humanizer-native neutral proxy using bundled body/head equipment and a combined skinned Avatar.
+- The process does not automatically create identity-perfect Humanizer garments, MakeClothes `.mhclo` clothing, equipment sockets, facial blendshapes, facial animation, or production hair cards.
 - Loose garments, coats, skirts, heels, and hair must not drive hidden anatomy. Create them as separate assets after the body fit.
+- Female and male builds share one workflow but require explicit gender-semantic translation and visually selected body/hair equipment. A successful female preset is not a male template.
