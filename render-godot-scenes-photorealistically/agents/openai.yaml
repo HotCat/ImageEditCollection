@@ -1,0 +1,4 @@
+interface:
+  display_name: "Photorealistic Godot Scene Render"
+  short_description: "Preserve Godot geometry and actor identity in AI renders"
+  default_prompt: "Use $render-godot-scenes-photorealistically to turn my Godot scene render into a photorealistic image while preserving camera, pose, scale, and character identity."
