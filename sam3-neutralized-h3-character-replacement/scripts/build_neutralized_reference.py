@@ -29,6 +29,9 @@ def main() -> None:
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--mask", type=Path, required=True,
                         help="Per-frame video mask; white is editable and black is protected.")
+    parser.add_argument("--mask-scope", choices=("full_subject", "head"), default="full_subject",
+                        help="Semantic scope of the mask (reported for validation; compositing is identical). "
+                             "Use head only when the mask contains face and visible hair, not neck/body.")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--matte-color", default="0x808080",
                         help="FFmpeg color for the neutral matte (default: 0x808080).")
@@ -82,7 +85,7 @@ def main() -> None:
     }
     if not all(checks.values()):
         raise RuntimeError(f"output validation failed: {checks}")
-    print(json.dumps({"output": str(args.output), "checks": checks}, indent=2))
+    print(json.dumps({"output": str(args.output), "mask_scope": args.mask_scope, "checks": checks}, indent=2))
 
 
 if __name__ == "__main__":
