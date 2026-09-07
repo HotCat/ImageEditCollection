@@ -1,0 +1,4 @@
+interface:
+  display_name: "SAM3 Neutralized H3 Character Replacement"
+  short_description: "Neutralize video subjects and write H3 prompts"
+  default_prompt: "Use $sam3-neutralized-h3-character-replacement to replace a video character with a supplied identity while preserving motion and scene."
