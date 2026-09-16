@@ -1,0 +1,4 @@
+interface:
+  display_name: "Capture SAM 3D Godot Pose"
+  short_description: "Capture a selected person's pose for Godot"
+  default_prompt: "Use $capture-sam3d-godot-pose to capture this selected person's coarse pose with SAM 3D Body and append it to my Godot .gdpose document."
