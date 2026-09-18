@@ -39,6 +39,12 @@ def numeric_vector(value: object, length: int) -> bool:
     )
 
 
+def unit_quaternion(value: object) -> bool:
+    return numeric_vector(value, 4) and abs(
+        math.sqrt(sum(float(item) * float(item) for item in value)) - 1.0
+    ) <= 1e-4
+
+
 def validate_document(document: object, args: argparse.Namespace) -> tuple[list[str], dict[str, object]]:
     failures: list[str] = []
     if not isinstance(document, Mapping):
@@ -89,21 +95,26 @@ def validate_document(document: object, args: argparse.Namespace) -> tuple[list[
             continue
         if "position" in transform and not numeric_vector(transform["position"], 3):
             failures.append(f"IK control {name}.position must be three finite numbers")
-        if "rotation_quaternion" in transform and not numeric_vector(transform["rotation_quaternion"], 4):
-            failures.append(f"IK control {name}.rotation_quaternion must be four finite numbers")
+        if "rotation_quaternion" in transform and not unit_quaternion(transform["rotation_quaternion"]):
+            failures.append(f"IK control {name}.rotation_quaternion must be a normalized xyzw quaternion")
 
     bones = pose.get("bones", {})
     if not isinstance(bones, Mapping):
         failures.append("pose bones must be an object")
         bones = {}
+    if bones and pose.get("rotation_space") != "godot4_absolute_local_bone_pose":
+        failures.append(
+            "pose bone overrides must declare rotation_space "
+            "godot4_absolute_local_bone_pose"
+        )
     for name, transform in bones.items():
         if not isinstance(transform, Mapping):
             failures.append(f"bone {name} must be an object")
             continue
         if "rotation_degrees" in transform and not numeric_vector(transform["rotation_degrees"], 3):
             failures.append(f"bone {name}.rotation_degrees must be three finite numbers")
-        if "rotation_quaternion" in transform and not numeric_vector(transform["rotation_quaternion"], 4):
-            failures.append(f"bone {name}.rotation_quaternion must be four finite numbers")
+        if "rotation_quaternion" in transform and not unit_quaternion(transform["rotation_quaternion"]):
+            failures.append(f"bone {name}.rotation_quaternion must be a normalized xyzw quaternion")
 
     source = pose.get("source", {})
     if args.require_sam3d_source and (

@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import math
+import struct
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,8 +15,31 @@ import sys
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
+VALIDATOR_SPEC = importlib.util.spec_from_file_location(
+    "validate_gdpose", SCRIPT_DIR / "validate_gdpose.py",
+)
+VALIDATOR = importlib.util.module_from_spec(VALIDATOR_SPEC)
+assert VALIDATOR_SPEC.loader is not None
+VALIDATOR_SPEC.loader.exec_module(VALIDATOR)
+
 
 class ImageToGdposeTests(unittest.TestCase):
+    def write_test_glb(self, path: Path, hips_rotation=None):
+        rotation = hips_rotation or [0.0, 0.0, 0.0, 1.0]
+        document = {
+            "asset": {"version": "2.0"},
+            "nodes": [{"name": "Hips", "rotation": rotation}],
+            "skins": [{"joints": [0]}],
+        }
+        json_chunk = json.dumps(document, separators=(",", ":")).encode("utf-8")
+        json_chunk += b" " * ((-len(json_chunk)) % 4)
+        total_length = 12 + 8 + len(json_chunk)
+        path.write_bytes(
+            struct.pack("<4sII", b"glTF", 2, total_length)
+            + struct.pack("<II", len(json_chunk), 0x4E4F534A)
+            + json_chunk
+        )
+
     def points(self):
         Point = MODULE.Point
         return {
@@ -56,12 +80,28 @@ class ImageToGdposeTests(unittest.TestCase):
     def test_torso_roll_produces_hybrid_hips_orientation(self):
         normalized = MODULE.normalize_landmarks(self.points(), 1.7, 0.08, False)
         pose = MODULE.make_ik_pose(normalized, 0.35, 0.35, "test.json")
-        MODULE.apply_torso_roll(pose, 180.0)
+        MODULE.apply_torso_roll(pose, 180.0, [0.0, 0.0, 0.0, 1.0])
         self.assertEqual(pose["mode"], "hybrid")
         self.assertEqual(pose["bones"], {
-            "Hips": {"rotation_degrees": [0.0, 180.0, 0.0]},
+            "Hips": {"rotation_quaternion": [0.0, 1.0, 0.0, 0.0]},
         })
+        self.assertEqual(pose["rotation_space"], "godot4_absolute_local_bone_pose")
         self.assertEqual(pose["orientation_hint"]["kind"], "local_hips_axial_roll")
+
+    def test_torso_roll_is_composed_onto_nonidentity_rest_rotation(self):
+        normalized = MODULE.normalize_landmarks(self.points(), 1.7, 0.08, False)
+        pose = MODULE.make_ik_pose(normalized, 0.35, 0.35, "test.json")
+        rest = [math.sin(math.radians(37.0) / 2.0), 0.0, 0.0,
+                math.cos(math.radians(37.0) / 2.0)]
+        MODULE.apply_torso_roll(pose, 90.0, rest)
+        actual = pose["bones"]["Hips"]["rotation_quaternion"]
+        expected = MODULE.quaternion_multiply(
+            rest, [0.0, math.sin(math.pi / 4.0), 0.0, math.cos(math.pi / 4.0)],
+        )
+        for value, wanted in zip(actual, expected):
+            self.assertAlmostEqual(value, wanted, places=7)
+        self.assertNotEqual(actual, [0.0, math.sin(math.pi / 4.0), 0.0,
+                                     math.cos(math.pi / 4.0)])
 
     def test_cli_writes_valid_document_from_landmark_json(self):
         serialized = {name: [point.x, point.y, point.z, point.confidence]
@@ -199,17 +239,24 @@ class ImageToGdposeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "sam-output.json"
             output = Path(directory) / "coarse.gdpose"
+            target_glb = Path(directory) / "target.glb"
+            self.write_test_glb(target_glb)
             source.write_text(json.dumps([{"pred_keypoints_3d": points}]), encoding="utf-8")
             result = MODULE.main([str(source), "--format", "sam3d-mhr",
                                   "--output", str(output), "--pose-name", "mhr_pose",
-                                  "--torso-roll-degrees", "180"])
+                                  "--torso-roll-degrees", "180",
+                                  "--target-glb", str(target_glb)])
             self.assertEqual(result, 0)
             document = json.loads(output.read_text(encoding="utf-8"))
             pose = document["poses"]["mhr_pose"]
             self.assertEqual(pose["source"]["kind"], "sam3d_body_mhr70")
             self.assertEqual(pose["mode"], "hybrid")
-            self.assertEqual(pose["bones"]["Hips"]["rotation_degrees"],
-                             [0.0, 180.0, 0.0])
+            self.assertEqual(pose["bones"]["Hips"]["rotation_quaternion"],
+                             [0.0, 1.0, 0.0, 0.0])
+            self.assertEqual(VALIDATOR.main([str(output), "--pose-name", "mhr_pose"]), 0)
+            del pose["rotation_space"]
+            output.write_text(json.dumps(document), encoding="utf-8")
+            self.assertEqual(VALIDATOR.main([str(output), "--pose-name", "mhr_pose"]), 1)
             self.assertEqual(set(pose["ik"]), {
                 "pelvis_target", "center_back_target", "neck_target", "head_target",
                 "l_arm_marker", "l_arm_pole", "r_arm_marker", "r_arm_pole",

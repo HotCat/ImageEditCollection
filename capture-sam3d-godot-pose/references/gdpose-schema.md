@@ -42,7 +42,7 @@ Compatibility requires more than a bone count. The scene must expose the expecte
 - `--floor-y`: lowest ankle target height. The default `0.08` matches the originating demo.
 - `--pole-distance`: elbow/knee pole offset. Increase cautiously when a nearly straight limb produces an unstable bend plane.
 
-Joint positions can leave rotation around the torso's long axis ambiguous, especially in prone, supine, side-lying, diving, or carried poses. `--torso-roll-degrees` adds a local `Hips` Y rotation and changes the profile to `hybrid`. Treat it as an explicit visual correction, not an automatic classifier.
+Joint positions can leave rotation around the torso's long axis ambiguous, especially in prone, supine, side-lying, diving, or carried poses. `--torso-roll-degrees` adds a local `Hips` Y rotation and changes the profile to `hybrid`. It requires `--target-glb` so the converter can compose that correction onto the imported Hips rest-local quaternion and emit the resulting absolute-local quaternion. Treat it as an explicit visual correction, not an automatic classifier.
 
 ## Occlusion and template semantics
 
@@ -57,3 +57,22 @@ For multiple people, run one inference per box and create one profile per target
 `--send HOST:PORT` sends one newline-delimited JSON `pose.apply` message using protocol `godot-pose-stream/1`. The originating project uses editor port `7007` and runtime port `7008`.
 
 The receiver should answer `pose.applied` and report applied or missing bones, controls, and modifiers. Treat missing required names as a compatibility failure. Keep this unauthenticated protocol bound to localhost; use an authenticated relay for remote input.
+
+### Godot 4 FK rotation invariant
+
+`Skeleton3D.set_bone_pose_rotation()` consumes the bone's **absolute local pose rotation** in parent space. It does not consume an animation delta relative to the imported rest rotation. Therefore an FK sender must:
+
+- send the solved `desired_local` quaternion directly;
+- send the target GLB/Godot rest-local quaternion for every unobserved bone;
+- preserve quaternion order as `x, y, z, w`; and
+- never substitute identity for a rest quaternion unless that imported rest rotation is actually identity.
+
+Do not send `inverse(rest_local) * desired_local`. Resetting the skeleton to rest before applying a frame does not make delta quaternions or identity overrides valid: the subsequent setter replaces the local rotation. Violating this rule destroys imported bone-roll axes, most visibly on thighs, wrists, hands, feet, fingers, and toes from the first frame.
+
+Motion caches produced by the video pipeline declare:
+
+```json
+"rotation_space": "godot4_absolute_local_bone_pose"
+```
+
+Reject an unlabelled or differently labelled cache instead of assuming it is safe to replay.

@@ -16,6 +16,7 @@ import copy
 import json
 import math
 import socket
+import struct
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -326,7 +327,50 @@ def make_ik_pose(points: Mapping[str, Point], pole_distance: float,
     }
 
 
-def apply_torso_roll(pose: dict[str, object], degrees: float) -> None:
+def quaternion_normalize(value: Iterable[float]) -> list[float]:
+    quaternion = [float(item) for item in value]
+    if len(quaternion) != 4:
+        raise ValueError("a quaternion must contain four xyzw values")
+    length = math.sqrt(sum(item * item for item in quaternion))
+    if length < 1e-12:
+        raise ValueError("cannot normalize a zero quaternion")
+    return [item / length for item in quaternion]
+
+
+def quaternion_multiply(a: Iterable[float], b: Iterable[float]) -> list[float]:
+    ax, ay, az, aw = quaternion_normalize(a)
+    bx, by, bz, bw = quaternion_normalize(b)
+    return quaternion_normalize([
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    ])
+
+
+def load_glb_rest_quaternion(path: Path, bone_name: str) -> list[float]:
+    """Read one node's imported local rest quaternion from a binary glTF."""
+    data = path.read_bytes()
+    if data[:4] != b"glTF" or len(data) < 20:
+        raise ValueError(f"not a binary glTF file: {path}")
+    json_length, chunk_type = struct.unpack_from("<II", data, 12)
+    if chunk_type != 0x4E4F534A:
+        raise ValueError(f"first GLB chunk is not JSON: {path}")
+    document = json.loads(data[20:20 + json_length].decode("utf-8"))
+    skin_joints = {
+        int(node_index)
+        for skin in document.get("skins", [])
+        for node_index in skin.get("joints", [])
+    }
+    for node_index in skin_joints:
+        node = document.get("nodes", [])[node_index]
+        if node.get("name") == bone_name:
+            return quaternion_normalize(node.get("rotation", [0.0, 0.0, 0.0, 1.0]))
+    raise ValueError(f"target GLB skin has no {bone_name!r} bone: {path}")
+
+
+def apply_torso_roll(pose: dict[str, object], degrees: float,
+                     hips_rest_quaternion: Iterable[float] | None = None) -> None:
     """Add an FK axial roll while retaining position-driven limb/body IK.
 
     A single-view keypoint skeleton identifies joint positions but cannot tell
@@ -336,14 +380,23 @@ def apply_torso_roll(pose: dict[str, object], degrees: float) -> None:
     """
     if abs(degrees) < 1e-6:
         return
+    if hips_rest_quaternion is None:
+        raise ValueError("torso roll requires the target GLB Hips rest quaternion")
     pose["mode"] = "hybrid"
+    pose["rotation_space"] = "godot4_absolute_local_bone_pose"
     bones = pose.setdefault("bones", {})
     if not isinstance(bones, dict):
         raise ValueError("pose bones field is not an object")
-    bones["Hips"] = {"rotation_degrees": [0.0, round(degrees, 6), 0.0]}
+    half_angle = math.radians(degrees) / 2.0
+    local_roll = [0.0, math.sin(half_angle), 0.0, math.cos(half_angle)]
+    desired_local = quaternion_multiply(hips_rest_quaternion, local_roll)
+    bones["Hips"] = {
+        "rotation_quaternion": [round(item, 8) for item in desired_local],
+    }
     pose["orientation_hint"] = {
         "kind": "local_hips_axial_roll",
         "degrees": round(degrees, 6),
+        "basis": "target_glb_rest_local",
     }
 
 
@@ -569,6 +622,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="SAM/MHR coordinate convention (default: Y-up MHR world coordinates)")
     parser.add_argument("--torso-roll-degrees", type=float, default=0.0,
                         help="local Hips Y roll; use 180 to change a horizontal body from belly-up to belly-down")
+    parser.add_argument("--target-glb", type=Path,
+                        help="exact Godot avatar GLB; required for nonzero torso roll")
     parser.add_argument("--send", metavar="HOST:PORT",
                         help="also apply the generated pose over the Godot pose stream")
     parser.add_argument("--landmarks-json", type=Path, metavar="PATH",
@@ -611,7 +666,12 @@ def main(argv: list[str] | None = None) -> int:
             source_metadata = pose.get("source")
             if isinstance(source_metadata, dict):
                 source_metadata["uncertain_landmarks"] = sorted(set(args.uncertain))
-        apply_torso_roll(pose, args.torso_roll_degrees)
+        hips_rest = None
+        if abs(args.torso_roll_degrees) >= 1e-6:
+            if args.target_glb is None:
+                raise ValueError("--target-glb is required with --torso-roll-degrees")
+            hips_rest = load_glb_rest_quaternion(args.target_glb, "Hips")
+        apply_torso_roll(pose, args.torso_roll_degrees, hips_rest)
         document = load_or_create_document(args.template)
         template_pose = None
         if isinstance(document.get("poses"), dict):

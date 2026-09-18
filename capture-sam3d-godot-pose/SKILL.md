@@ -1,25 +1,31 @@
 ---
 name: capture-sam3d-godot-pose
-description: Capture one explicitly selected person's coarse 3D pose from a still image with Meta SAM 3D Body/MHR70 and append an editable IK or hybrid profile to a Godot 4 `.gdpose` document. Use for standing, walking, running, sitting, lying, crouching, kneeling, jumping, diving, carried, or assisted poses, including multi-person images with partial occlusion. Supports manual subject boxes, explicit occlusion fallbacks, coordinate and body-facing correction, template preservation, validation, and localhost preview streaming. Produces controls for a full humanoid rig but does not claim to infer every local bone rotation from one image.
+description: Capture one selected person's pose for a Godot 4 humanoid from either a still image or a motion video. Use SAM 3D Body/MHR70 to append a coarse editable IK/hybrid profile to `.gdpose`, or fuse dense NLF observations with sparse SAM 3D Body anchors and temporal filtering to stream full-rig FK `pose.frame` motion. Handles varied activities, explicit subject boxes, partial occlusion, cache/replay, and localhost preview; use it when pose data must preserve the target GLB's absolute local bone rotations.
 ---
 
 # Capture SAM 3D Godot Pose
 
-Turn one selected person's MHR70 landmarks into a coarse Godot pose that can be previewed immediately and refined with IK markers and FK controls. Apply the same pipeline to standing, locomotion, seated, recumbent, crouched, airborne, and carried poses; pose category does not change the data format.
+Capture one selected person for a Godot humanoid. Use the still-image path for an editable coarse pose profile; use the video path for temporally filtered full-rig FK frames streamed without baking an Animation resource.
+
+## Choose a mode
+
+- **Still image to `.gdpose`:** follow the core workflow below. The output is intentionally coarse and remains editable through IK/FK controls.
+- **Video to live FK stream:** read [references/video-motion-streaming.md](references/video-motion-streaming.md), then use `scripts/video_to_pose_stream.py`. It derives every outgoing quaternion from the target GLB and labels caches with `godot4_absolute_local_bone_pose`.
 
 ## Read before execution
 
 - Read [references/sam3d-setup.md](references/sam3d-setup.md) before installing, patching, or running SAM 3D Body.
 - Read [references/gdpose-schema.md](references/gdpose-schema.md) before adapting control names, changing axes, or making rig-compatibility claims.
+- Read [references/video-motion-streaming.md](references/video-motion-streaming.md) for video capture, motion-cache replay, or `pose.frame` work. Do not load it for ordinary still-image conversion.
 
-## Core workflow
+## Still-image workflow
 
 1. Inspect the full-resolution image and select exactly one person. Record one explicit `X1 Y1 X2 Y2` box when there is more than one person, overlap, partial occlusion, or an unreliable automatic crop. A box—not a sex or role label—selects the subject.
 2. Run `scripts/sam3d_export_json.py` once for that person. Use another inference pass and box for every other character. Do not treat a two-person image as one combined skeleton.
 3. Inspect the resulting 2D/3D landmarks. Require at least 70 `pred_keypoints_3d` entries and confirm that the shoulders, wrists, hips, knees, and ankles all belong to the selected person. Reject blended or anatomically impossible output.
 4. Identify visibly hidden, blended, or misassigned joints. Because official SAM output may omit joint confidence, pass each known uncertainty explicitly, for example `--uncertain left_wrist --uncertain right_ankle`. These controls are copied from the active template pose, making the result deterministic.
 5. Convert with `scripts/image_to_gdpose.py`. Supply the target project's existing `.gdpose` with `--template`. Write a candidate file first so the tracked document remains recoverable during review.
-6. Resolve coordinate ambiguity by visual comparison. Use `--mirror-x` only for a true left/right reversal, `--mhr-axis camera` only for camera-convention JSON, and `--torso-roll-degrees` only to correct body-facing ambiguity around the torso's long axis.
+6. Resolve coordinate ambiguity by visual comparison. Use `--mirror-x` only for a true left/right reversal and `--mhr-axis camera` only for camera-convention JSON. Use `--torso-roll-degrees` only for body-facing ambiguity and supply `--target-glb`; the converter must compose the correction onto that rig's Hips rest-local quaternion.
 7. Validate with `scripts/validate_gdpose.py`, using the target rig's expected bone count. Preview the candidate in Godot and treat missing controls or modifiers in the receiver reply as a failed retarget.
 8. Refine hidden limbs, depth, contacts, spine curvature, head direction, hands, feet, and detailed FK manually. Preserve the source image, bounding box, MHR JSON, and candidate `.gdpose` for reproducibility.
 
@@ -92,3 +98,6 @@ Omit `--uncertain` when every mapped joint is trusted. Add `--activate` only whe
 - `scripts/sam3d_device.patch`: compatibility patch for upstream revisions that still hard-code CUDA.
 - `scripts/requirements-mediapipe.txt`: optional fallback for simple, mostly visible single-person images.
 - `scripts/test_image_to_gdpose.py`: deterministic converter tests requiring only Python's standard library.
+- `scripts/video_to_pose_stream.py`: NLF + SAM 3D Body + temporal solver and `pose.frame` cache/replay client.
+- `scripts/test_video_to_pose_stream.py`: checkpoint-free tests for quaternion math, temporal filtering, protocol shape, and absolute-local rest preservation.
+- `references/video-motion-streaming.md`: video setup, solver architecture, cache schema, streaming commands, and limitations.
