@@ -400,6 +400,21 @@ def apply_torso_roll(pose: dict[str, object], degrees: float,
     }
 
 
+def force_pure_ik(pose: dict[str, object]) -> None:
+    """Remove all FK orientation overrides and leave a target-only profile.
+
+    A still image cannot reliably disambiguate the avatar's local torso roll.
+    That correction belongs in the scene-level IK_character transform or in a
+    later manual FK pass, not in an automatically generated profile. Keeping
+    the generated result pure IK also means PoseControls remain editable after
+    the profile is sent to Godot.
+    """
+    pose["mode"] = "ik"
+    pose["bones"] = {}
+    pose.pop("rotation_space", None)
+    pose.pop("orientation_hint", None)
+
+
 # Each generated control depends on one or more image landmarks.  When a
 # detector reports an occluded joint with low visibility, omitting that control
 # lets the template's carefully authored value remain in effect.
@@ -622,6 +637,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="SAM/MHR coordinate convention (default: Y-up MHR world coordinates)")
     parser.add_argument("--torso-roll-degrees", type=float, default=0.0,
                         help="local Hips Y roll; use 180 to change a horizontal body from belly-up to belly-down")
+    parser.add_argument("--pure-ik", action="store_true",
+                        help=("emit target-only IK with no FK bone overrides; "
+                              "incompatible with --torso-roll-degrees"))
     parser.add_argument("--target-glb", type=Path,
                         help="exact Godot avatar GLB; required for nonzero torso roll")
     parser.add_argument("--send", metavar="HOST:PORT",
@@ -667,11 +685,15 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(source_metadata, dict):
                 source_metadata["uncertain_landmarks"] = sorted(set(args.uncertain))
         hips_rest = None
+        if args.pure_ik and abs(args.torso_roll_degrees) >= 1e-6:
+            raise ValueError("--pure-ik cannot be combined with --torso-roll-degrees; rotate IK_character in Godot instead")
         if abs(args.torso_roll_degrees) >= 1e-6:
             if args.target_glb is None:
                 raise ValueError("--target-glb is required with --torso-roll-degrees")
             hips_rest = load_glb_rest_quaternion(args.target_glb, "Hips")
         apply_torso_roll(pose, args.torso_roll_degrees, hips_rest)
+        if args.pure_ik:
+            force_pure_ik(pose)
         document = load_or_create_document(args.template)
         template_pose = None
         if isinstance(document.get("poses"), dict):

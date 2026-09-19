@@ -42,7 +42,7 @@ Compatibility requires more than a bone count. The scene must expose the expecte
 - `--floor-y`: lowest ankle target height. The default `0.08` matches the originating demo.
 - `--pole-distance`: elbow/knee pole offset. Increase cautiously when a nearly straight limb produces an unstable bend plane.
 
-Joint positions can leave rotation around the torso's long axis ambiguous, especially in prone, supine, side-lying, diving, or carried poses. `--torso-roll-degrees` adds a local `Hips` Y rotation and changes the profile to `hybrid`. It requires `--target-glb` so the converter can compose that correction onto the imported Hips rest-local quaternion and emit the resulting absolute-local quaternion. Treat it as an explicit visual correction, not an automatic classifier.
+Joint positions can leave rotation around the torso's long axis ambiguous, especially in prone, supine, side-lying, diving, or carried poses. Still-image exports should normally remain pure IK: pass `--pure-ik` and correct the global facing direction by rotating `IK_character` in Godot. The optional `--torso-roll-degrees` flag adds a local `Hips` Y rotation and changes the profile to `hybrid`; it requires `--target-glb` so the converter can compose that correction onto the imported Hips rest-local quaternion and emit the resulting absolute-local quaternion. Treat it as an explicit visual correction only when a user requests a hybrid profile, never as the default SAM3D conversion path.
 
 ## Occlusion and template semantics
 

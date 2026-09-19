@@ -103,6 +103,19 @@ class ImageToGdposeTests(unittest.TestCase):
         self.assertNotEqual(actual, [0.0, math.sin(math.pi / 4.0), 0.0,
                                      math.cos(math.pi / 4.0)])
 
+    def test_force_pure_ik_removes_orientation_override(self):
+        pose = {
+            "mode": "hybrid",
+            "bones": {"Hips": {"rotation_quaternion": [0, 1, 0, 0]}},
+            "rotation_space": "godot4_absolute_local_bone_pose",
+            "orientation_hint": {"kind": "local_hips_axial_roll"},
+        }
+        MODULE.force_pure_ik(pose)
+        self.assertEqual(pose["mode"], "ik")
+        self.assertEqual(pose["bones"], {})
+        self.assertNotIn("rotation_space", pose)
+        self.assertNotIn("orientation_hint", pose)
+
     def test_cli_writes_valid_document_from_landmark_json(self):
         serialized = {name: [point.x, point.y, point.z, point.confidence]
                       for name, point in self.points().items()}
