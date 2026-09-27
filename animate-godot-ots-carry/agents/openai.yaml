@@ -1,0 +1,4 @@
+interface:
+  display_name: "Animate Godot OTS Carry"
+  short_description: "Build procedural OTS carry animation from gait video"
+  default_prompt: "Use $animate-godot-ots-carry to turn this male gait video into a reusable Godot OTS carry animation."

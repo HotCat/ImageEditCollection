@@ -25,8 +25,10 @@ The target skin is 56 bones by default. Pass `--expected-bones 0` only when inte
 3. Run SAM 3D Body sparsely, normally at 1 FPS, for MHR orientation anchors.
 4. Retarget SAM axial twist only for `Hips`, `Spine`, `Chest`, `UpperChest`, `Neck`, and `Head`.
 5. Fit arms, hands, legs, and feet parent-first from NLF segment directions using minimal swing. Do not copy SAM limb roll into a differently oriented target rig.
-6. Interpolate observations, median/Gaussian-smooth positions, enforce quaternion hemisphere continuity, reject isolated quaternion outliers, apply bidirectional slerp smoothing, and damp foot rotation during inferred contacts.
-7. Emit every target bone in every frame, using its actual rest-local quaternion when it is not observed.
+6. Infer parent-node root displacement from pelvis motion and stabilize it with planted-foot contact constraints; keep pelvis wobble in the local Hips quaternion.
+7. Optionally map cumulative gait distance to a cubic Bezier waypoint path and derive character heading from its tangent.
+8. Interpolate observations, median/Gaussian-smooth positions, enforce quaternion hemisphere continuity, reject isolated quaternion outliers, apply bidirectional slerp smoothing, and damp foot rotation during inferred contacts.
+9. Emit every target bone in every frame, using its actual rest-local quaternion when it is not observed.
 
 On Apple Silicon, the official NLF multiperson wrapper may cast through float64, which MPS cannot execute. The included observer calls NLF's scripted crop model directly so dense inference stays float32/float16 on MPS. The MHR TorchScript used by SAM 3D Body also contains float64 operations, so `--sam3d-device cpu` is the safe default there. CUDA may be used when the installed upstream stack supports it.
 
@@ -94,9 +96,128 @@ The receiver must enter FK mode and keep IK modifiers from overwriting streamed 
 
 ## Limits and repair strategy
 
-- The current stream solves rotations, not world/root translation. Foot contacts damp rotation but do not perform full foot locking or root-motion recovery.
+- Root motion is a monocular estimate, not surveyed ground truth. Foot contacts reduce drift, but long occlusions, moving cameras, sliding shoes, and uncertain depth still require review.
 - Monocular depth, axial roll, crossed limbs, fast motion blur, and long occlusion remain ambiguous. Use a tight stable box, inspect the observation cache, and prefer multi-view capture when exact depth matters.
 - NLF does not observe finger articulation or detailed toe roll. Those bones intentionally preserve target rest rotations rather than receiving guessed deltas.
 - Hair, garment, face, and accessory bones remain at rest unless another trusted source drives them.
 - For two-person contact, solve each character independently and repair hand/body contact in Godot. Do not let one box alternate between subjects.
 - Treat the result as a strong coarse motion layer. Use authored constraints, contact solving, or manual FK for production-quality hands, feet, and object interactions.
+
+## Root motion and Bezier trajectory programs
+
+`--root-motion foot-contact` is the default. It scales NLF geometry to the
+target GLB, extracts pelvis displacement, and blends it with planted-foot
+constraints. `--root-motion pelvis` uses raw pelvis displacement, and
+`--root-motion off` keeps the character parent stationary. The local Hips
+rotation still carries captured pelvic wobble in all three modes.
+
+The optional `--trajectory PATH.json` treats gait distance like a feed axis:
+captured footfalls determine progress over time while trajectory waypoints
+determine the spatial toolpath. Bézier waypoint handles are vectors relative
+to their position:
+
+```json
+{
+  "type": "bezier",
+  "distance_mode": "gait",
+  "pace_scale": 1.0,
+  "contact_correction": 1.0,
+  "local_forward": [0, 0, -1],
+  "waypoints": [
+    {"position": [0, 0, 0], "out_handle": [0, 0, 1.2]},
+    {"position": [1.5, 0, 2.8], "in_handle": [-0.8, 0, -0.9], "out_handle": [0.8, 0, 0.9]},
+    {"position": [3, 0, 1], "in_handle": [-0.8, 0, 0.3]}
+  ]
+}
+```
+
+Set `type: "linear"` to join waypoint positions with true straight segments;
+`in_handle` and `out_handle` are then ignored. This is useful for diagnosing
+root-speed and foot-contact behavior without curve geometry. `type: "bezier"`
+retains the cubic path shown above.
+
+Use `distance_mode: "gait"` (the default) and `pace_scale: 1.0` to preserve
+captured stride distance and cadence. A longer path remains partially
+traversed after one clip. `distance_mode: "fit"` forces the entire path into
+the clip. Set `speed_profile: "constant"` when a shot requires equal root
+distance per frame, or `"captured"` to retain source speed changes. A project editor may add
+`scene_origin_node` so its receiver starts the character at the visible first
+waypoint instead of its previous runtime position.
+
+Trajectory feed is directed root displacement, not cumulative pelvis variation.
+Vertical bob and lateral hip sway do not become forward distance, while small
+backward planted-foot corrections remain in the feed to counter local foot
+movement. Accumulating every variation creates visible sliding even when the
+contact solver itself is stable.
+
+After absolute-local FK retargeting and temporal filtering, the solver evaluates
+the target rig's actual `LeftFoot` and `RightFoot` origins. During each detected
+contact it corrects distance only along the curve tangent. This second contact
+pass accounts for target limb proportions without moving the character sideways
+off the authored path. `contact_correction` ranges from `0.0` to `1.0`; use
+`1.0` for the strongest lock. `local_forward` must match the avatar convention,
+normally Godot `-Z`, or the correction will be evaluated in the wrong direction.
+The accumulated correction persists when support changes between feet, which is
+essential when the source camera tracks the walker and raw pelvis displacement
+therefore under-reports actual travel.
+
+In `fit` mode, contact locking can otherwise leave the character short of the
+last waypoint. The solver restores the residual endpoint distance primarily in
+frames where neither foot is planted, with a small planted-frame contribution
+to avoid velocity bursts. Use `gait` mode when preserving source pace matters
+more than reaching the authored endpoint.
+
+Walking scenes may set `upright_root: true` to remove pitch/roll inherited from
+an earlier static pose. With `ground_lock: true`, the solver evaluates the
+retargeted target rig's Foot and Toes origins after FK filtering and emits
+vertical root offsets that place the lowest support sole at `ground_y`.
+`skeleton_origin_y` is the target scene's Skeleton3D child offset. Optional
+`max_torso_tilt_degrees` and `max_head_up_degrees` limits correct monocular
+axial-anchor bias without changing the fitted upper-leg global rotations.
+
+Ground lock fixes floating, but horizontal slide is separate. Set
+`foot_ik: true` to run target-rig analytical two-bone IK after root planning.
+Each contact interval anchors the ankle in world XZ, rotates UpperLeg and
+LowerLeg while preserving the inferred knee bend plane, and restores the
+fitted Foot global orientation. Grounding is then recalculated from the
+corrected Foot and Toes. This removes lateral and tangent support-foot drift
+without moving the character root away from the authored line.
+
+Use `--trajectory-heading tangent` to turn the character along the path or
+`--trajectory-heading none` to preserve its initial facing direction. Tangent
+mode sends an explicit parent-space `heading_direction` and a local
+`local_forward` axis rather than assuming the character's authored scene yaw is
+already aligned. The default forward axis is Godot's `-Z`; the receiver rotates
+that axis onto the tangent while preserving the character's initial pitch and
+roll. The wire message also carries `pose.root_motion.position`, `rotation_y`,
+and `space: "character_parent"`, applied relative to the starting Node3D
+transform.
+
+### Reuse periodic locomotion
+
+Walking and running should not loop a long absolute root-motion cache: the
+loop boundary would teleport the character from the path end to its start.
+Choose two frames at the same gait phase, normally consecutive strikes of the
+same foot, then extract the half-open interval:
+
+```bash
+python3 scripts/extract_motion_cycle.py \
+  /absolute/path/motion_pose_frames.json \
+  /absolute/path/walk_cycle.json \
+  --start-frame START --end-frame END \
+  --animation-name walk_cycle \
+  --fit-planted-feet \
+  --skeleton-origin-y SKELETON_CHILD_Y \
+  --ground-clearance 0.045
+```
+
+The extractor averages the two boundary quaternions for an exact seam and
+zeros horizontal root translation. With `--fit-planted-feet`, it derives stance
+from target-avatar sole height and backward foot speed, measures
+`recommended_speed_mps`, and solves three repeated copies before retaining the
+middle one. The default `--ik-strength 0` uses this information only for speed
+and grounding so the captured thighs, shins, and feet remain intact. Set a
+non-zero strength only after visually validating that positional planting does
+not distort the captured knee motion. A Godot project
+should loop these absolute-local bone rotations while a separate editor-capable
+locomotion controller advances the character at the recorded speed.

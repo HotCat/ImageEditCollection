@@ -5,7 +5,7 @@ description: Capture one selected person's pose for a Godot 4 humanoid from eith
 
 # Capture SAM 3D Godot Pose
 
-Capture one selected person for a Godot humanoid. Use the still-image path for an editable coarse pose profile; use the video path for temporally filtered full-rig FK frames streamed without baking an Animation resource.
+Capture one selected person for a Godot humanoid. Use the still-image path for an editable coarse pose profile; use the video path for temporally filtered full-rig FK frames. Periodic locomotion can also be reduced to a phase-aligned in-place cycle before a project-specific Godot animation bake.
 
 ## Choose a mode
 
@@ -17,7 +17,7 @@ Capture one selected person for a Godot humanoid. Use the still-image path for a
   scene-level `IK_character` Node3D in Godot, or perform a later manual FK
   pass. Use the hybrid path only when a user explicitly requests a saved FK
   orientation override.
-- **Video to live FK stream:** read [references/video-motion-streaming.md](references/video-motion-streaming.md), then use `scripts/video_to_pose_stream.py`. It derives every outgoing quaternion from the target GLB and labels caches with `godot4_absolute_local_bone_pose`.
+- **Video to FK motion or locomotion cycle:** read [references/video-motion-streaming.md](references/video-motion-streaming.md), then use `scripts/video_to_pose_stream.py`. It derives every outgoing quaternion from the target GLB, labels caches with `godot4_absolute_local_bone_pose`, infers optional root displacement from pelvis motion and foot contacts, and can map gait-distance progress onto a user-authored path. For periodic walking or running, use `scripts/extract_motion_cycle.py` to isolate one matching-phase stride; keep repeated bone motion separate from non-looping world travel.
 
 ## Read before execution
 
@@ -127,5 +127,6 @@ Omit `--uncertain` when every mapped joint is trusted. Add `--activate` only whe
 - `scripts/requirements-mediapipe.txt`: optional fallback for simple, mostly visible single-person images.
 - `scripts/test_image_to_gdpose.py`: deterministic converter tests requiring only Python's standard library.
 - `scripts/video_to_pose_stream.py`: NLF + SAM 3D Body + temporal solver and `pose.frame` cache/replay client.
+- `scripts/extract_motion_cycle.py`: extract a same-phase, in-place walk/run loop, infer cyclic target-rig foot contacts, preserve captured foot orientation during planted-foot fitting, and record travel speed for an editor or runtime locomotion controller.
 - `scripts/test_video_to_pose_stream.py`: checkpoint-free tests for quaternion math, temporal filtering, protocol shape, and absolute-local rest preservation.
 - `references/video-motion-streaming.md`: video setup, solver architecture, cache schema, streaming commands, and limitations.
