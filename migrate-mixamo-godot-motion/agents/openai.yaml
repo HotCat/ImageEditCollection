@@ -1,0 +1,4 @@
+interface:
+  display_name: "Migrate Mixamo to Godot Motion"
+  short_description: "Retarget Mixamo FBX motion into Godot safely"
+  default_prompt: "Use $migrate-mixamo-godot-motion to migrate this Mixamo FBX into a validated Godot animation."
